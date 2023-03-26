@@ -1,0 +1,16 @@
+.vscode
+/references
+/test
+/data
+/figure
+*__pycache__*
+/experiments/CharID/encoded_data
+/experiments/CharID/logs
+/experiments/glove_embedding_experiments
+/source/pretrained_model/test.py
+/source/pretrained_model/encoded_data
+/source/pretrained_model/logs*
+/source/pretrained_model/pytorch_glove/figures
+/source/pretrained_model/pytorch_glove/data
+/source/pretrained_model/pytorch_glove/model
+/source/gnn_model/log
