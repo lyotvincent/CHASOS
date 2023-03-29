@@ -11,7 +11,7 @@ from models import *
 import torch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
-from metrics import compute_two_loss, compute_accuracy
+from metrics import compute_two_loss, compute_accuracy, compute_cosine_similarity_2
 from scheduler import EarlyStopping
 
 
@@ -19,8 +19,19 @@ from scheduler import EarlyStopping
 start_time = time.time()
 log_time = time.strftime("%Y_%m_%d_%H_%M_%S", time.localtime())
 log_out = open(PRETRAINED_MODEL_PATH+r'/logs/log_'+log_time+'.txt', 'w', buffering=8)
-train_writer = SummaryWriter(PRETRAINED_MODEL_PATH+f'/logs/tensorboard_log_{log_time}/train')
-val_writer = SummaryWriter(PRETRAINED_MODEL_PATH+f'/logs/tensorboard_log_{log_time}/val')
+
+loss_writer = SummaryWriter(PRETRAINED_MODEL_PATH+f'/logs/tensorboard_log_{log_time}/loss')
+sl_loss_writer = SummaryWriter(PRETRAINED_MODEL_PATH+f'/logs/tensorboard_log_{log_time}/sl_loss')
+sd_loss_writer = SummaryWriter(PRETRAINED_MODEL_PATH+f'/logs/tensorboard_log_{log_time}/sd_loss')
+cos_sim_loss_writer = SummaryWriter(PRETRAINED_MODEL_PATH+f'/logs/tensorboard_log_{log_time}/cos_sim_loss')
+val_loss_writer = SummaryWriter(PRETRAINED_MODEL_PATH+f'/logs/tensorboard_log_{log_time}/val_loss')
+val_sl_loss_writer = SummaryWriter(PRETRAINED_MODEL_PATH+f'/logs/tensorboard_log_{log_time}/val_sl_loss')
+val_sd_loss_writer = SummaryWriter(PRETRAINED_MODEL_PATH+f'/logs/tensorboard_log_{log_time}/val_sd_loss')
+val_cos_sim_loss_writer = SummaryWriter(PRETRAINED_MODEL_PATH+f'/logs/tensorboard_log_{log_time}/val_cos_sim_loss')
+saol_train_writer = SummaryWriter(PRETRAINED_MODEL_PATH+f'/logs/tensorboard_log_{log_time}/saol_train_acc')
+gap_fc_train_writer = SummaryWriter(PRETRAINED_MODEL_PATH+f'/logs/tensorboard_log_{log_time}/gap_fc_train_acc')
+saol_val_writer = SummaryWriter(PRETRAINED_MODEL_PATH+f'/logs/tensorboard_log_{log_time}/saol_val_acc')
+gap_fc_val_writer = SummaryWriter(PRETRAINED_MODEL_PATH+f'/logs/tensorboard_log_{log_time}/gap_fc_val_acc')
 
 # * hyper parameters
 SPLIT_MODE = 'chr'
@@ -30,9 +41,9 @@ INIT_BATCH_SIZE = 128 # 使用全部cell line 做chr val的
 INIT_BATCH_SIZE = 16 # 使用GM12878 做chr val的
 BATCH_SIZE = 16
 LOG_STEP = 100*(INIT_BATCH_SIZE//BATCH_SIZE)
-EPOCH = 80
+EPOCH = 100
 LEARNING_RATE = 0.0001
-PATIENCE = 100
+PATIENCE = 150
 DELTA = 5E-5
 START_EPOCH = 5
 log_out.write(f"SPLIT_MODE: {SPLIT_MODE}\n")
@@ -77,12 +88,12 @@ else:
 log_info = f"""device: {device}"""
 print(log_info)
 log_out.write(log_info+"\n")
-model = PretrainedModel_v20230329()
+model = PretrainedModel_v20230326_vSAOL()
 model.to(device)
 
 # write model graph
-train_writer.add_graph(model, (torch.randint(4**5, (2, 996)).to(device)))
-val_writer.add_graph(model, (torch.randint(4**5, (2, 996)).to(device)))
+# train_writer.add_graph(model, (torch.randint(4**5, (2, 996)).to(device)))
+# val_writer.add_graph(model, (torch.randint(4**5, (2, 996)).to(device)))
 # write model info
 log_out.write(str(model)+'\n')
 # write model parameter number
@@ -121,9 +132,12 @@ for e in range(EPOCH):
         # 梯度清零
         optimizer.zero_grad()
         # 计算模型的输出
-        pred_scores = model(batch_kmer_data)
+        saol_scores, gap_fc_scores = model(batch_kmer_data)
         # 计算损失函数
-        loss = compute_two_loss(pred_scores, batch_labels)
+        sl_loss = compute_two_loss(saol_scores, batch_labels) # supervised loss
+        sd_loss = compute_two_loss(gap_fc_scores, batch_labels) # self-distillation loss
+        cos_sim_loss = compute_cosine_similarity_2(saol_scores, gap_fc_scores) # cosine similarity loss
+        loss = sl_loss + 0.7 * cos_sim_loss + 0.7 * sd_loss
         # 反向传播
         loss.backward()
         # 更新梯度
@@ -132,8 +146,9 @@ for e in range(EPOCH):
         if batch_num % LOG_STEP == 0:
             model.eval()
             with torch.no_grad():
-                anchor_acc, ocr_acc = compute_accuracy(pred_scores, batch_labels)
-                val_loss, val_anchor_acc, val_ocr_acc = 0, 0, 0
+                saol_anchor_acc, saol_ocr_acc = compute_accuracy(saol_scores, batch_labels)
+                gap_fc_anchor_acc, gap_fc_ocr_acc = compute_accuracy(gap_fc_scores, batch_labels)
+                val_loss, val_sl_loss, val_sd_loss, val_cos_sim_loss, val_saol_anchor_acc, val_saol_ocr_acc, val_gap_fc_anchor_acc, val_gap_fc_ocr_acc = 0, 0, 0, 0, 0, 0, 0, 0
                 val_batch_num = len(val_dataloader)
                 for val_batch in val_dataloader:
                     # print(batch_num, 9)
@@ -141,31 +156,47 @@ for e in range(EPOCH):
                     # val_batch_kmer_data, val_batch_mono_data, val_batch_labels = val_batch_kmer_data.to(device), val_batch_mono_data.to(device), val_batch_labels.to(device)
                     val_batch_kmer_data, val_batch_labels = val_batch
                     val_batch_kmer_data, val_batch_labels = val_batch_kmer_data.to(device), val_batch_labels.to(device)
-                    val_pred_scores = model(val_batch_kmer_data)
-                    val_loss += compute_two_loss(val_pred_scores, val_batch_labels).item()
-                    temp_val_anchor_acc, temp_val_ocr_acc = compute_accuracy(val_pred_scores, val_batch_labels)
-                    val_anchor_acc += temp_val_anchor_acc
-                    val_ocr_acc += temp_val_ocr_acc
-                val_loss, val_anchor_acc, val_ocr_acc = val_loss/val_batch_num, val_anchor_acc/val_batch_num, val_ocr_acc/val_batch_num
-                log_info = f"Batch {batch_num}, loss: {loss.item():.4f}, anchor_acc: {anchor_acc:.4f}, ocr_acc: {ocr_acc:.4f}, val_loss: {val_loss:.4f}, val_anchor_acc: {val_anchor_acc:.4f}, val_ocr_acc: {val_ocr_acc:.4f}"
+                    val_saol_scores, val_gap_fc_scores = model(val_batch_kmer_data)
+                    val_sl_loss += compute_two_loss(val_saol_scores, val_batch_labels).item()
+                    val_sd_loss += compute_two_loss(val_gap_fc_scores, val_batch_labels).item()
+                    val_cos_sim_loss += compute_cosine_similarity_2(val_saol_scores, val_gap_fc_scores)
+                    temp_val_saol_anchor_acc, temp_val_saol_ocr_acc = compute_accuracy(val_saol_scores, val_batch_labels)
+                    temp_val_gap_fc_anchor_acc, temp_val_gap_fc_ocr_acc = compute_accuracy(val_gap_fc_scores, val_batch_labels)
+                    val_saol_anchor_acc += temp_val_saol_anchor_acc
+                    val_saol_ocr_acc += temp_val_saol_ocr_acc
+                    val_gap_fc_anchor_acc += temp_val_gap_fc_anchor_acc
+                    val_gap_fc_ocr_acc += temp_val_gap_fc_ocr_acc
+                val_sl_loss, val_sd_loss, val_cos_sim_loss, val_saol_anchor_acc, val_saol_ocr_acc, val_gap_fc_anchor_acc, val_gap_fc_ocr_acc = val_sl_loss/val_batch_num, val_sd_loss/val_batch_num, val_cos_sim_loss/val_batch_num, val_saol_anchor_acc/val_batch_num, val_saol_ocr_acc/val_batch_num, val_gap_fc_anchor_acc/val_batch_num, val_gap_fc_ocr_acc/val_batch_num
+                val_loss = val_sl_loss + 0.7 * val_cos_sim_loss + 0.7 * val_sd_loss
+                log_info = f"Batch {batch_num}, loss: {loss.item():.4f}, sl_loss: {sl_loss.item():.4f}, sd_loss: {sd_loss.item():.4f}, cos_sim_loss: {cos_sim_loss.item():.4f}, saol_anchor_acc: {saol_anchor_acc:.4f}, saol_ocr_acc: {saol_ocr_acc:.4f}, gap_fc_anchor_acc: {gap_fc_anchor_acc:.4f}, gap_fc_ocr_acc: {gap_fc_ocr_acc:.4f}, val_loss: {val_loss:.4f}, val_sl_loss: {val_sl_loss:.4f}, val_sd_loss: {val_sd_loss:.4f}, val_cos_sim_loss: {val_cos_sim_loss:.4f}, val_saol_anchor_acc: {val_saol_anchor_acc:.4f}, val_saol_ocr_acc: {val_saol_ocr_acc:.4f}, val_gap_fc_anchor_acc: {val_gap_fc_anchor_acc:.4f}, val_gap_fc_ocr_acc: {val_gap_fc_ocr_acc:.4f}"
                 print(log_info)
                 log_out.write(log_info + '\n')
                 global_step = e*len(train_dataloader)//(INIT_BATCH_SIZE//BATCH_SIZE)+batch_num//(INIT_BATCH_SIZE//BATCH_SIZE)
-                train_writer.add_scalar(tag='loss', scalar_value=loss, global_step=global_step)
-                train_writer.add_scalar(tag='anchor_acc', scalar_value=anchor_acc, global_step=global_step)
-                train_writer.add_scalar(tag='ocr_acc', scalar_value=ocr_acc, global_step=global_step)
-                val_writer.add_scalar(tag='loss', scalar_value=val_loss, global_step=global_step)
-                val_writer.add_scalar(tag='anchor_acc', scalar_value=val_anchor_acc, global_step=global_step)
-                val_writer.add_scalar(tag='ocr_acc', scalar_value=val_ocr_acc, global_step=global_step)
+                loss_writer.add_scalar('loss', loss.item(), global_step)
+                sl_loss_writer.add_scalar('loss', sl_loss.item(), global_step)
+                sd_loss_writer.add_scalar('loss', sd_loss.item(), global_step)
+                cos_sim_loss_writer.add_scalar('loss', cos_sim_loss.item(), global_step)
+                val_loss_writer.add_scalar('loss', val_loss, global_step)
+                val_sl_loss_writer.add_scalar('loss', val_sl_loss, global_step)
+                val_sd_loss_writer.add_scalar('loss', val_sd_loss, global_step)
+                val_cos_sim_loss_writer.add_scalar('loss', val_cos_sim_loss, global_step)
+                saol_train_writer.add_scalar(tag='anchor_acc', scalar_value=saol_anchor_acc, global_step=global_step)
+                saol_train_writer.add_scalar(tag='ocr_acc', scalar_value=saol_ocr_acc, global_step=global_step)
+                gap_fc_train_writer.add_scalar(tag='anchor_acc', scalar_value=gap_fc_anchor_acc, global_step=global_step)
+                gap_fc_train_writer.add_scalar(tag='ocr_acc', scalar_value=gap_fc_ocr_acc, global_step=global_step)
+                saol_val_writer.add_scalar(tag='anchor_acc', scalar_value=val_saol_anchor_acc, global_step=global_step)
+                saol_val_writer.add_scalar(tag='ocr_acc', scalar_value=val_saol_ocr_acc, global_step=global_step)
+                gap_fc_val_writer.add_scalar(tag='anchor_acc', scalar_value=val_gap_fc_anchor_acc, global_step=global_step)
+                gap_fc_val_writer.add_scalar(tag='ocr_acc', scalar_value=val_gap_fc_ocr_acc, global_step=global_step)
                 # val_writer.add_pr_curve(tag='pr_curve', labels=labels, predictions=predictions, global_step=0)
-                if val_loss < best_val_loss: # update best val loss
-                    best_val_loss = val_loss
+                if val_sl_loss < best_val_loss: # update best val loss
+                    best_val_loss = val_sl_loss
                     best_val_loss_log_info = f"Epoch {e}\t"+log_info
-                if (val_anchor_acc > best_val_anchor_acc) or (val_anchor_acc == best_val_anchor_acc and val_ocr_acc > best_val_ocr_acc): # update best val anchor acc
-                    best_val_anchor_acc = val_anchor_acc
+                if (val_saol_anchor_acc > best_val_anchor_acc) or (val_saol_anchor_acc == best_val_anchor_acc and val_saol_ocr_acc > best_val_ocr_acc): # update best val anchor acc
+                    best_val_anchor_acc = val_saol_anchor_acc
                     best_val_anchor_acc_log_info = f"Epoch {e}\t"+log_info
-                if (val_ocr_acc > best_val_ocr_acc) or (val_ocr_acc == best_val_ocr_acc and val_anchor_acc > best_val_anchor_acc):
-                    best_val_ocr_acc = val_ocr_acc
+                if (val_saol_ocr_acc > best_val_ocr_acc) or (val_saol_ocr_acc == best_val_ocr_acc and val_saol_anchor_acc > best_val_anchor_acc):
+                    best_val_ocr_acc = val_saol_ocr_acc
                     best_val_ocr_acc_log_info = f"Epoch {e}\t"+log_info
             # 早停止
             early_stopping(metric=val_loss, current_epoch=e)
@@ -179,8 +210,18 @@ for e in range(EPOCH):
     if early_stopping.early_stop:
         break
 
-train_writer.close()
-val_writer.close()
+loss_writer.close()
+sl_loss_writer.close()
+sd_loss_writer.close()
+cos_sim_loss_writer.close()
+val_loss_writer.close()
+val_sl_loss_writer.close()
+val_sd_loss_writer.close()
+val_cos_sim_loss_writer.close()
+saol_train_writer.close()
+gap_fc_train_writer.close()
+saol_val_writer.close()
+gap_fc_val_writer.close()
 
 print('----------')
 log_out.write('----------\n')

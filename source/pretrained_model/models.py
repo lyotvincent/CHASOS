@@ -1062,9 +1062,270 @@ class PretrainedModel_v20230326(nn.Module):
         h = self.out_layer(h)               # output shape: (batch_size, 2)
         return h
 
+class PretrainedModel_v20230326_vSAOL(nn.Module):
+    """
+    @description: model for 996bp, no slice, and use n*1 & 1*n conv (Asymmetric Convolution)
+                  add SAOL, and self-Distillation GAP-FC
+                  based on 0320
+    """
+    def __init__(self):
+        super().__init__()
+        EMBEDDING_DIM = 128
+        self.embedding_1 = nn.Embedding(num_embeddings=4**5, embedding_dim=EMBEDDING_DIM)
+        self.pos_encoding = PositionalEncoding(embedding_dim=EMBEDDING_DIM, max_seq_len=1000)
+
+        self.sk_block_1 = SKBlock_v2(h_channels=1, out_channels=32, reduction=16)
+        self.squeeze_convolution_1 = nn.Sequential(
+            FireBlock_v3(input_channels=32, squeeze_channels=16, e_1_channels=16, e_3_channels=32, e_5_channels=16, groups=1),
+            SEBlock_v1(h_channels=64, reduction=32),
+            nn.MaxPool2d((4, 4), padding=(2,0))
+        )
+        self.sk_block_2 = SKBlock_v2(h_channels=64, out_channels=64, reduction=32)
+        self.squeeze_convolution_2 = nn.Sequential(
+            FireBlock_v3(input_channels=64, squeeze_channels=32, e_1_channels=32, e_3_channels=64, e_5_channels=32, groups=1),
+            SEBlock_v1(h_channels=128, reduction=64),
+            nn.MaxPool2d((4, 4), padding=(1,0))
+        )
+        self.sk_block_3 = SKBlock_v2(h_channels=128, out_channels=128, reduction=64)
+        self.squeeze_convolution_3 = nn.Sequential(
+            FireBlock_v3(input_channels=128, squeeze_channels=64, e_1_channels=64, e_3_channels=128, e_5_channels=64, groups=1),
+            SEBlock_v1(h_channels=256, reduction=128),
+            nn.MaxPool2d((4, 4), padding=(1,0))
+        )
+        # Spatial Attention Map
+        self.sam_layer = SpatialAttentionMapBlock_v1(h=16, w=2, in_c=256, mid_c=32)
+        # Spatial Logits
+        self.sl_layer = SpatialLogitsBlock_v1(h=16, w=2, in_c=(64, 128, 256), mid_c=16, out_c=2)
+        # global average pooling (GAP) layer and fully-connected (FC) layers
+        self.out_layer = nn.Sequential(
+            nn.AdaptiveMaxPool2d((1, 1)),
+            nn.Flatten(),
+            nn.Linear(256, 64),
+            nn.ReLU(),
+            nn.Linear(64, 2),
+            nn.Sigmoid()
+        )
+
+        ## load embedding parameters
+        # saved_dict = torch.load(GLOVE_PATH+r'/model/GM12878_loop_glove_embedding.pt')
+        saved_dict = torch.load(GLOVE_PATH+f'/model/glove_embedding_dim{EMBEDDING_DIM}.pt')
+        embedding_dict = {'weight': saved_dict['focal_embeddings.weight']}
+        model_dict = self.embedding_1.state_dict()
+        model_dict.update(embedding_dict)
+        self.embedding_1.load_state_dict(model_dict)
+
+    def forward(self, kmer_data):
+        h = self.embedding_1(kmer_data)
+        h = self.pos_encoding(h) # output shape: (batch_size, 996, 128)
+        h = h.reshape([-1, 1, h.shape[1], h.shape[2]]) # output shape: (batch_size, 1, 996, 128)
+
+        h1 = self.sk_block_1(h)                 # output shape: (batch_size, 32, 996, 128)
+        h1 = self.squeeze_convolution_1(h1)     # output shape: (batch_size, 64, 250, 32)
+        h1 = self.sk_block_2(h1)                # output shape: (batch_size, 64, 250, 32)
+        h2 = self.squeeze_convolution_2(h1)     # output shape: (batch_size, 128, 63, 8)
+        h2 = self.sk_block_3(h2)                # output shape: (batch_size, 128, 63, 8)
+        h3 = self.squeeze_convolution_3(h2)     # output shape: (batch_size, 256, 16, 2)
+
+        # Spatially Attentive Output Layer
+        sam = self.sam_layer(h3)                # output shape: (batch_size, 1, 16, 2)
+        sl = self.sl_layer(h1, h2, h3)          # output shape: (batch_size, 2, 16, 2)
+        # Spatial Weighted Sum
+        sws = torch.sum(torch.mul(sam, sl), dim=(2,3)) # output shape: (batch_size, 2)
+
+        # GAP-FC
+        gap_fc_out = self.out_layer(h3)                  # output shape: (batch_size, 2)
+        return sws, gap_fc_out
+
+class PretrainedModel_v20230327(nn.Module):
+    """
+    @description: model for 996bp, no cut, and use n*1 & 1*n conv (Asymmetric Convolution)
+                  based on PretrainedModel_v20230319,
+                  use new SKBlock_v5, FireBlock_v6, which replace kernel 1*3 & dilation 2 with kernel 1*5
+    """
+    def __init__(self):
+        super().__init__()
+        EMBEDDING_DIM = 128
+        self.embedding_1 = nn.Embedding(num_embeddings=4**5, embedding_dim=EMBEDDING_DIM)
+        self.pos_encoding = PositionalEncoding(embedding_dim=EMBEDDING_DIM, max_seq_len=1000)
+
+        self.sk_block_1 = SKBlock_v5(h_channels=1, out_channels=32, reduction=16)
+        self.squeeze_convolution_1 = nn.Sequential(
+            FireBlock_v6(input_channels=32, squeeze_channels=16, e_1_channels=16, e_3_channels=32, e_5_channels=16, groups=1),
+            SEBlock_v1(h_channels=64, reduction=32),
+            nn.MaxPool2d((4, 4), padding=(2,0))
+        )
+        self.sk_block_2 = SKBlock_v5(h_channels=64, out_channels=64, reduction=32)
+        self.squeeze_convolution_2 = nn.Sequential(
+            FireBlock_v6(input_channels=64, squeeze_channels=32, e_1_channels=32, e_3_channels=64, e_5_channels=32, groups=1),
+            SEBlock_v1(h_channels=128, reduction=64),
+            nn.MaxPool2d((4, 4), padding=(1,0))
+        )
+        self.sk_block_3 = SKBlock_v5(h_channels=128, out_channels=128, reduction=64)
+        self.squeeze_convolution_3 = nn.Sequential(
+            FireBlock_v6(input_channels=128, squeeze_channels=64, e_1_channels=64, e_3_channels=128, e_5_channels=64, groups=1),
+            SEBlock_v1(h_channels=256, reduction=128),
+            nn.MaxPool2d((4, 4), padding=(1,0))
+        )
+        self.out_layer = nn.Sequential(
+            nn.AdaptiveMaxPool2d((1, 1)),
+            nn.Flatten(),
+            nn.Linear(256, 64),
+            nn.ReLU(),
+            nn.Linear(64, 2),
+            nn.Sigmoid()
+        )
+
+        ## load embedding parameters
+        # saved_dict = torch.load(GLOVE_PATH+r'/model/GM12878_loop_glove_embedding.pt')
+        saved_dict = torch.load(GLOVE_PATH+f'/model/glove_embedding_dim{EMBEDDING_DIM}.pt')
+        embedding_dict = {'weight': saved_dict['focal_embeddings.weight']}
+        # // model_dict = self.embedding_1.state_dict()
+        # // model_dict.update(embedding_dict)
+        self.embedding_1.load_state_dict(embedding_dict)
+
+    def forward(self, kmer_data):
+        h = self.embedding_1(kmer_data)
+        h = self.pos_encoding(h) # output shape: (batch_size, 996, 128)
+        h = h.reshape([-1, 1, h.shape[1], h.shape[2]]) # output shape: (batch_size, 1, 996, 128)
+
+        h = self.sk_block_1(h)              # output shape: (batch_size, 32, 996, 128)
+        h = self.squeeze_convolution_1(h)   # output shape: (batch_size, 64, 250, 32)
+        h = self.sk_block_2(h)              # output shape: (batch_size, 64, 250, 32)
+        h = self.squeeze_convolution_2(h)   # output shape: (batch_size, 128, 63, 8)
+        h = self.sk_block_3(h)              # output shape: (batch_size, 128, 63, 8)
+        h = self.squeeze_convolution_3(h)   # output shape: (batch_size, 256, 16, 2)
+        h = self.out_layer(h)               # output shape: (batch_size, 2)
+        return h
+
+class PretrainedModel_v20230328(nn.Module):
+    """
+    @description: model for 996bp, no cut, and use n*1 & 1*n conv (Asymmetric Convolution)
+                  based on PretrainedModel_v20230319,
+                  init 1*3 3*1 weight bias with pretraind layer
+    """
+    def __init__(self):
+        super().__init__()
+        EMBEDDING_DIM = 128
+        self.embedding_1 = nn.Embedding(num_embeddings=4**5, embedding_dim=EMBEDDING_DIM)
+        self.pos_encoding = PositionalEncoding(embedding_dim=EMBEDDING_DIM, max_seq_len=1000)
+
+        self.sk_block_1 = SKBlock_v6(h_channels=1, out_channels=32, reduction=16)
+        self.squeeze_convolution_1 = nn.Sequential(
+            FireBlock_v7(input_channels=32, squeeze_channels=16, e_1_channels=16, e_3_channels=32, e_5_channels=16, groups=1),
+            SEBlock_v1(h_channels=64, reduction=32),
+            nn.MaxPool2d((4, 4), padding=(2,0))
+        )
+        self.sk_block_2 = SKBlock_v6(h_channels=64, out_channels=64, reduction=32)
+        self.squeeze_convolution_2 = nn.Sequential(
+            FireBlock_v7(input_channels=64, squeeze_channels=32, e_1_channels=32, e_3_channels=64, e_5_channels=32, groups=1),
+            SEBlock_v1(h_channels=128, reduction=64),
+            nn.MaxPool2d((4, 4), padding=(1,0))
+        )
+        self.sk_block_3 = SKBlock_v6(h_channels=128, out_channels=128, reduction=64)
+        self.squeeze_convolution_3 = nn.Sequential(
+            FireBlock_v7(input_channels=128, squeeze_channels=64, e_1_channels=64, e_3_channels=128, e_5_channels=64, groups=1),
+            SEBlock_v1(h_channels=256, reduction=128),
+            nn.MaxPool2d((4, 4), padding=(1,0))
+        )
+        self.out_layer = nn.Sequential(
+            nn.AdaptiveMaxPool2d((1, 1)),
+            nn.Flatten(),
+            nn.Linear(256, 64),
+            nn.ReLU(),
+            nn.Linear(64, 2),
+            nn.Sigmoid()
+        )
+
+        ## load embedding parameters
+        # saved_dict = torch.load(GLOVE_PATH+r'/model/GM12878_loop_glove_embedding.pt')
+        saved_dict = torch.load(GLOVE_PATH+f'/model/glove_embedding_dim{EMBEDDING_DIM}.pt')
+        embedding_dict = {'weight': saved_dict['focal_embeddings.weight']}
+        # // model_dict = self.embedding_1.state_dict()
+        # // model_dict.update(embedding_dict)
+        self.embedding_1.load_state_dict(embedding_dict)
+
+    def forward(self, kmer_data):
+        h = self.embedding_1(kmer_data)
+        h = self.pos_encoding(h) # output shape: (batch_size, 996, 128)
+        h = h.reshape([-1, 1, h.shape[1], h.shape[2]]) # output shape: (batch_size, 1, 996, 128)
+
+        h = self.sk_block_1(h)              # output shape: (batch_size, 32, 996, 128)
+        h = self.squeeze_convolution_1(h)   # output shape: (batch_size, 64, 250, 32)
+        h = self.sk_block_2(h)              # output shape: (batch_size, 64, 250, 32)
+        h = self.squeeze_convolution_2(h)   # output shape: (batch_size, 128, 63, 8)
+        h = self.sk_block_3(h)              # output shape: (batch_size, 128, 63, 8)
+        h = self.squeeze_convolution_3(h)   # output shape: (batch_size, 256, 16, 2)
+        h = self.out_layer(h)               # output shape: (batch_size, 2)
+        return h
+
+class PretrainedModel_v20230329(nn.Module):
+    """
+    @description: model for 996bp, no cut, and use n*1 & 1*n conv (Asymmetric Convolution)
+                  based on PretrainedModel_v20230319,
+                  replace MaxPool2d with AttentionPool_v1
+    @thop.profile: macs=3841239801.0, params=966462.0
+    @model parameter number: 1097534
+    """
+    def __init__(self):
+        super().__init__()
+        EMBEDDING_DIM = 128
+        self.embedding_1 = nn.Embedding(num_embeddings=4**5, embedding_dim=EMBEDDING_DIM)
+        self.pos_encoding = PositionalEncoding(embedding_dim=EMBEDDING_DIM, max_seq_len=1000)
+
+        self.sk_block_1 = SKBlock_v2(h_channels=1, out_channels=32, reduction=16)
+        self.squeeze_convolution_1 = nn.Sequential(
+            FireBlock_v3(input_channels=32, squeeze_channels=16, e_1_channels=16, e_3_channels=32, e_5_channels=16, groups=1),
+            SEBlock_v1(h_channels=64, reduction=32),
+            AttentionPool_v1(attention_dim=3, attention_len=128, out_w=996, out_h=32, reduction_dim=32),
+            AttentionPool_v1(attention_dim=2, attention_len=996, out_w=250, out_h=32, reduction_dim=128)
+        )
+        self.sk_block_2 = SKBlock_v2(h_channels=64, out_channels=64, reduction=32)
+        self.squeeze_convolution_2 = nn.Sequential(
+            FireBlock_v3(input_channels=64, squeeze_channels=32, e_1_channels=32, e_3_channels=64, e_5_channels=32, groups=1),
+            SEBlock_v1(h_channels=128, reduction=64),
+            AttentionPool_v1(attention_dim=3, attention_len=32, out_w=250, out_h=8, reduction_dim=8),
+            AttentionPool_v1(attention_dim=2, attention_len=250, out_w=63, out_h=8, reduction_dim=63)
+        )
+        self.sk_block_3 = SKBlock_v2(h_channels=128, out_channels=128, reduction=64)
+        self.squeeze_convolution_3 = nn.Sequential(
+            FireBlock_v3(input_channels=128, squeeze_channels=64, e_1_channels=64, e_3_channels=128, e_5_channels=64, groups=1),
+            SEBlock_v1(h_channels=256, reduction=128),
+            AttentionPool_v1(attention_dim=3, attention_len=8, out_w=63, out_h=2, reduction_dim=2),
+            AttentionPool_v1(attention_dim=2, attention_len=63, out_w=16, out_h=2, reduction_dim=16)
+        )
+        self.out_layer = nn.Sequential(
+            nn.AdaptiveMaxPool2d((1, 1)),
+            nn.Flatten(),
+            nn.Linear(256, 64),
+            nn.ReLU(),
+            nn.Linear(64, 2),
+            nn.Sigmoid()
+        )
+
+        ## load embedding parameters
+        # saved_dict = torch.load(GLOVE_PATH+r'/model/GM12878_loop_glove_embedding.pt')
+        saved_dict = torch.load(GLOVE_PATH+f'/model/glove_embedding_dim{EMBEDDING_DIM}.pt')
+        embedding_dict = {'weight': saved_dict['focal_embeddings.weight']}
+        model_dict = self.embedding_1.state_dict()
+        model_dict.update(embedding_dict)
+        self.embedding_1.load_state_dict(model_dict)
+
+    def forward(self, kmer_data):
+        h = self.embedding_1(kmer_data)
+        h = self.pos_encoding(h) # output shape: (batch_size, 996, 128)
+        h = h.reshape([-1, 1, h.shape[1], h.shape[2]]) # output shape: (batch_size, 1, 996, 128)
+
+        h = self.sk_block_1(h)              # output shape: (batch_size, 32, 996, 128)
+        h = self.squeeze_convolution_1(h)   # output shape: (batch_size, 64, 250, 32)
+        h = self.sk_block_2(h)              # output shape: (batch_size, 64, 250, 32)
+        h = self.squeeze_convolution_2(h)   # output shape: (batch_size, 128, 63, 8)
+        h = self.sk_block_3(h)              # output shape: (batch_size, 128, 63, 8)
+        h = self.squeeze_convolution_3(h)   # output shape: (batch_size, 256, 16, 2)
+        h = self.out_layer(h)               # output shape: (batch_size, 2)
+        return h
 
 if __name__=="__main__":
-    model = PretrainedModel_v20230326()
+    model = PretrainedModel_v20230329()
 
     # from thop import profile
     # input = torch.randint(4**5, (1, 996))
@@ -1075,4 +1336,6 @@ if __name__=="__main__":
     # stat(model, (1, 1000, 4))
 
     print(f"model parameter number: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
+    # for param_tensor in model.state_dict():
+    #     print(param_tensor, "\t", model.state_dict()[param_tensor].size())
 

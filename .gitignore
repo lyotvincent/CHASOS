@@ -13,4 +13,6 @@
 /source/pretrained_model/pytorch_glove/figures
 /source/pretrained_model/pytorch_glove/data
 /source/pretrained_model/pytorch_glove/model
+/source/pretrained_model/pretrained_layer/logs
+/source/pretrained_model/pretrained_layer/model
 /source/gnn_model/log

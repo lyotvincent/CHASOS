@@ -1,7 +1,11 @@
 
 
+import sys, os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from parameters import PRETRAINED_MODEL_PATH
 import torch
 import torch.nn as nn
+
 
 
 def channel_shuffle(x: torch.Tensor, groups: int) -> torch.Tensor:
@@ -190,6 +194,106 @@ class FireBlock_v5(nn.Module):
 
     def forward(self, x):
         s = self.squeeze(x)
+        e_1 = self.expand_1(s)
+        e_3 = self.expand_3(s)
+        e_5 = self.expand_5(s)
+        x = torch.cat([e_1, e_3, e_5], dim=1)
+        return x
+
+class FireBlock_v6(nn.Module):
+    '''
+    @date: 2023.03.19
+    @description: squeeze and expand, designed for 996*166 not cut model
+                  add Asymmetric Convolution，1*3 & 3*1, which equals to 3*1 & 1*3
+                  based on FireBlock_v3
+                  replace kernel 1*3 & dilation 2 with kernel 1*5
+    '''
+    def __init__(self, input_channels, squeeze_channels, e_1_channels, e_3_channels, e_5_channels, groups):
+        super().__init__()
+        # squeeze
+        self.squeeze = nn.Conv2d(in_channels=input_channels, out_channels=squeeze_channels, kernel_size=(1, 1), padding='same', groups=groups)
+        self.squeeze_bn_relu = BatchNormReLU(squeeze_channels)
+        # expand
+        self.expand_1 = nn.Sequential(
+            nn.Conv2d(in_channels=squeeze_channels, out_channels=e_1_channels, kernel_size=(1, 1), padding='same', groups=groups),
+            BatchNormReLU(e_1_channels)
+        )
+        self.expand_3 = nn.Sequential(
+            nn.Conv2d(in_channels=squeeze_channels, out_channels=e_3_channels, kernel_size=(1, 1), padding='same', groups=groups),
+            nn.Conv2d(in_channels=e_3_channels, out_channels=e_3_channels, kernel_size=(1, 3), padding='same', groups=groups),
+            nn.Conv2d(in_channels=e_3_channels, out_channels=e_3_channels, kernel_size=(3, 1), padding='same', groups=groups),
+            BatchNormReLU(e_3_channels)
+        )
+        self.expand_5 = nn.Sequential(
+            nn.Conv2d(in_channels=squeeze_channels, out_channels=e_5_channels, kernel_size=(1, 1), padding='same', groups=groups),
+            nn.Conv2d(in_channels=e_5_channels, out_channels=e_5_channels, kernel_size=(1, 5), padding='same', groups=groups),
+            nn.Conv2d(in_channels=e_5_channels, out_channels=e_5_channels, kernel_size=(5, 1), padding='same', groups=groups),
+            BatchNormReLU(e_5_channels)
+        )
+
+    def forward(self, x):
+        s = self.squeeze(x)
+        s = self.squeeze_bn_relu(s)
+        e_1 = self.expand_1(s)
+        e_3 = self.expand_3(s)
+        e_5 = self.expand_5(s)
+        x = torch.cat([e_1, e_3, e_5], dim=1)
+        return x
+
+class FireBlock_v7(nn.Module):
+    '''
+    @date: 2023.03.28
+    @description: squeeze and expand, designed for 996*166 not cut model
+                  add Asymmetric Convolution，1*3 & 3*1, which equals to 3*1 & 1*3
+                  based on FireBlock_v3
+                  init 1*3 3*1 weight bias with pretraind layer
+    '''
+    def __init__(self, input_channels, squeeze_channels, e_1_channels, e_3_channels, e_5_channels, groups):
+        super().__init__()
+        # squeeze
+        self.squeeze = nn.Conv2d(in_channels=input_channels, out_channels=squeeze_channels, kernel_size=(1, 1), padding='same', groups=groups)
+        self.squeeze_bn_relu = BatchNormReLU(squeeze_channels)
+        # expand
+        self.expand_1 = nn.Sequential(
+            nn.Conv2d(in_channels=squeeze_channels, out_channels=e_1_channels, kernel_size=(1, 1), padding='same', groups=groups),
+            BatchNormReLU(e_1_channels)
+        )
+        self.expand_3 = nn.Sequential(
+            nn.Conv2d(in_channels=squeeze_channels, out_channels=e_3_channels, kernel_size=(1, 1), padding='same', groups=groups),
+            nn.Conv2d(in_channels=e_3_channels, out_channels=e_3_channels, kernel_size=(1, 3), padding='same', groups=groups),
+            nn.Conv2d(in_channels=e_3_channels, out_channels=e_3_channels, kernel_size=(3, 1), padding='same', groups=groups),
+            BatchNormReLU(e_3_channels)
+        )
+        self.expand_5 = nn.Sequential(
+            nn.Conv2d(in_channels=squeeze_channels, out_channels=e_5_channels, kernel_size=(1, 1), padding='same', groups=groups),
+            nn.Conv2d(in_channels=e_5_channels, out_channels=e_5_channels, kernel_size=(1, 3), padding='same', dilation=2, groups=groups),
+            nn.Conv2d(in_channels=e_5_channels, out_channels=e_5_channels, kernel_size=(3, 1), padding='same', dilation=2, groups=groups),
+            BatchNormReLU(e_5_channels)
+        )
+
+        self._init_by_pretrained_layers()
+
+    def _init_by_pretrained_layers(self):
+        checkpoint = torch.load(PRETRAINED_MODEL_PATH+r'/pretrained_layer/model/PretrainedLayers_best.pth')
+        saved_dict = checkpoint['net']
+        expand_3_state_dict = self.expand_3.state_dict()
+        for param_tensor_name in expand_3_state_dict:
+            weight_name, bias_name = get_init_layer_name(expand_3_state_dict[param_tensor_name].size())
+            if weight_name:
+                expand_3_state_dict[param_tensor_name] = saved_dict[weight_name]
+                expand_3_state_dict[param_tensor_name.replace('weight', 'bias')] = saved_dict[bias_name]
+        self.expand_3.load_state_dict(expand_3_state_dict)
+        expand_5_state_dict = self.expand_5.state_dict()
+        for param_tensor_name in expand_5_state_dict:
+            weight_name, bias_name = get_init_layer_name(expand_5_state_dict[param_tensor_name].size())
+            if weight_name:
+                expand_5_state_dict[param_tensor_name] = saved_dict[weight_name]
+                expand_5_state_dict[param_tensor_name.replace('weight', 'bias')] = saved_dict[bias_name]
+        self.expand_5.load_state_dict(expand_5_state_dict)
+
+    def forward(self, x):
+        s = self.squeeze(x)
+        s = self.squeeze_bn_relu(s)
         e_1 = self.expand_1(s)
         e_3 = self.expand_3(s)
         e_5 = self.expand_5(s)
@@ -489,6 +593,151 @@ class SKBlock_v4(nn.Module):
         v = torch.mul(u_1, u_a) + torch.mul(u_3, u_b) + torch.mul(u_5, u_c)
         return v
 
+class SKBlock_v5(nn.Module):
+    '''
+    @date: 2023.03.19
+    @description: split, fuse and select
+                  based on SKBlock_v2,
+                  replace kernel 1*3 & dilation 2 with kernel 1*5
+    '''
+    def __init__(self, h_channels, out_channels, reduction):
+        super().__init__()
+        self.u_1 = nn.Sequential(
+            nn.Conv2d(in_channels=h_channels, out_channels=out_channels, kernel_size=(1, 1), padding='same'),
+            BatchNormReLU(out_channels)
+        )
+        self.u_3 = nn.Sequential(
+            nn.Conv2d(in_channels=h_channels, out_channels=out_channels, kernel_size=(1, 1), padding='same'),
+            nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=(1, 3), padding='same'),
+            nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=(3, 1), padding='same'),
+            BatchNormReLU(out_channels)
+        )
+        self.u_5 = nn.Sequential(
+            nn.Conv2d(in_channels=h_channels, out_channels=out_channels, kernel_size=(1, 1), padding='same'),
+            nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=(1, 5), padding='same'),
+            nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=(5, 1), padding='same'),
+            BatchNormReLU(out_channels)
+        )
+        self.sequential = nn.Sequential(
+            nn.AdaptiveMaxPool2d((1, 1)),
+            nn.Flatten(),
+            nn.Linear(out_channels, reduction),
+            nn.BatchNorm1d(reduction),
+            nn.ReLU()
+        )
+        self.u_a = nn.Linear(reduction, out_channels)
+        self.u_b = nn.Linear(reduction, out_channels)
+        self.u_c = nn.Linear(reduction, out_channels)
+
+    def forward(self, h):
+        # 1 split
+        u_1 = self.u_1(h)
+        u_3 = self.u_3(h)
+        u_5 = self.u_5(h)
+        # 2 fuse
+        # 2.1 integrate information from all branches.
+        u = u_1 + u_3 + u_5
+        # 2.2 global average pooling.
+        # 2.3 compact feature by simple fully connected (fc) layer.
+        z = self.sequential(u)
+        # 3 select
+        # 3.1 Soft attention across channels
+        u_a = self.u_a(z)
+        u_b = self.u_b(z)
+        u_c = self.u_c(z)
+        u_abc = nn.Softmax(dim=1)(torch.stack((u_a, u_b, u_c), dim=1))
+        u_a, u_b, u_c = torch.split(u_abc, split_size_or_sections=1, dim=1)
+        u_a = u_a.reshape(u_a.shape[0], u_a.shape[2], 1, 1)
+        u_b = u_b.reshape(u_b.shape[0], u_b.shape[2], 1, 1)
+        u_c = u_c.reshape(u_c.shape[0], u_c.shape[2], 1, 1)
+        # 3.2 The final feature map V is obtained through the attention weights on various kernels.
+        v = torch.mul(u_1, u_a) + torch.mul(u_3, u_b) + torch.mul(u_5, u_c)
+        return v
+
+class SKBlock_v6(nn.Module):
+    '''
+    @date: 2023.03.28
+    @description: split, fuse and select,
+                  based on SKBlock_v2,
+                  init 1*3 3*1 weight bias with pretraind layer
+    '''
+    def __init__(self, h_channels, out_channels, reduction):
+        super().__init__()
+        self.u_1 = nn.Sequential(
+            nn.Conv2d(in_channels=h_channels, out_channels=out_channels, kernel_size=(1, 1), padding='same'),
+            BatchNormReLU(out_channels)
+        )
+        self.u_3 = nn.Sequential(
+            nn.Conv2d(in_channels=h_channels, out_channels=out_channels, kernel_size=(1, 1), padding='same'),
+            nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=(1, 3), padding='same'),
+            nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=(3, 1), padding='same'),
+            BatchNormReLU(out_channels)
+        )
+        self.u_5 = nn.Sequential(
+            nn.Conv2d(in_channels=h_channels, out_channels=out_channels, kernel_size=(1, 1), padding='same'),
+            nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=(1, 3), padding='same', dilation=2),
+            nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=(3, 1), padding='same', dilation=2),
+            BatchNormReLU(out_channels)
+        )
+        self.sequential = nn.Sequential(
+            nn.AdaptiveMaxPool2d((1, 1)),
+            nn.Flatten(),
+            nn.Linear(out_channels, reduction),
+            nn.BatchNorm1d(reduction),
+            nn.ReLU()
+        )
+        self.u_a = nn.Linear(reduction, out_channels)
+        self.u_b = nn.Linear(reduction, out_channels)
+        self.u_c = nn.Linear(reduction, out_channels)
+
+        self._init_by_pretrained_layers()
+
+    def _init_by_pretrained_layers(self):
+        checkpoint = torch.load(PRETRAINED_MODEL_PATH+r'/pretrained_layer/model/PretrainedLayers_best.pth')
+        saved_dict = checkpoint['net']
+
+        u_3_state_dict = self.u_3.cuda().state_dict()
+        for origin_param_name in u_3_state_dict:
+            weight_name, bias_name = get_init_layer_name(u_3_state_dict[origin_param_name].size())
+            if weight_name:
+                u_3_state_dict[origin_param_name] = 0.5*saved_dict[weight_name] + 0.5*u_3_state_dict[origin_param_name]
+                u_3_state_dict[origin_param_name.replace('weight', 'bias')] = 0.5*saved_dict[bias_name] + 0.5*u_3_state_dict[origin_param_name.replace('weight', 'bias')]
+        self.u_3.load_state_dict(u_3_state_dict)
+
+        u_5_state_dict = self.u_5.cuda().state_dict()
+        for origin_param_name in u_5_state_dict:
+            weight_name, bias_name = get_init_layer_name(u_5_state_dict[origin_param_name].size())
+            if weight_name:
+                u_5_state_dict[origin_param_name] = 0.5*saved_dict[weight_name] + 0.5*u_5_state_dict[origin_param_name]
+                u_5_state_dict[origin_param_name.replace('weight', 'bias')] = 0.5*saved_dict[bias_name] + 0.5*u_5_state_dict[origin_param_name.replace('weight', 'bias')]
+        self.u_5.load_state_dict(u_5_state_dict)
+        
+
+    def forward(self, h):
+        # 1 split
+        u_1 = self.u_1(h)
+        u_3 = self.u_3(h)
+        u_5 = self.u_5(h)
+        # 2 fuse
+        # 2.1 integrate information from all branches.
+        u = u_1 + u_3 + u_5
+        # 2.2 global average pooling.
+        # 2.3 compact feature by simple fully connected (fc) layer.
+        z = self.sequential(u)
+        # 3 select
+        # 3.1 Soft attention across channels
+        u_a = self.u_a(z)
+        u_b = self.u_b(z)
+        u_c = self.u_c(z)
+        u_abc = nn.Softmax(dim=1)(torch.stack((u_a, u_b, u_c), dim=1))
+        u_a, u_b, u_c = torch.split(u_abc, split_size_or_sections=1, dim=1)
+        u_a = u_a.reshape(u_a.shape[0], u_a.shape[2], 1, 1)
+        u_b = u_b.reshape(u_b.shape[0], u_b.shape[2], 1, 1)
+        u_c = u_c.reshape(u_c.shape[0], u_c.shape[2], 1, 1)
+        # 3.2 The final feature map V is obtained through the attention weights on various kernels.
+        v = torch.mul(u_1, u_a) + torch.mul(u_3, u_b) + torch.mul(u_5, u_c)
+        return v
+
 class SpatialAttentionMapBlock_v1(nn.Module):
     '''
     @date: 2023.03.20
@@ -552,4 +801,75 @@ class SpatialLogitsBlock_v1(nn.Module):
         cat_h = torch.cat((h1, h2, h3), dim=1) # cat_h shape: (batch_size, 3*mid_c, h, w)
         sl = self.sl_out_block(cat_h)
         return sl
+
+def get_init_layer_name(weight_shape):
+    weightshape2layername = {torch.Size([16, 16, 1, 3]): 'conv_3.1.weight',
+                             torch.Size([16, 16, 3, 1]): 'conv_3.2.weight',
+                             torch.Size([32, 32, 1, 3]): 'conv_3.7.weight',
+                             torch.Size([32, 32, 3, 1]): 'conv_3.8.weight',
+                             torch.Size([64, 64, 1, 3]): 'conv_3.13.weight',
+                             torch.Size([64, 64, 3, 1]): 'conv_3.14.weight',
+                             torch.Size([128, 128, 1, 3]): 'conv_3.19.weight',
+                             torch.Size([128, 128, 3, 1]): 'conv_3.20.weight',
+                             torch.Size([16, 16, 1, 5]): 'conv_5.1.weight',
+                             torch.Size([16, 16, 5, 1]): 'conv_5.2.weight',
+                             torch.Size([32, 32, 1, 5]): 'conv_5.7.weight',
+                             torch.Size([32, 32, 5, 1]): 'conv_5.8.weight',
+                             torch.Size([64, 64, 1, 5]): 'conv_5.13.weight',
+                             torch.Size([64, 64, 5, 1]): 'conv_5.14.weight',
+                             torch.Size([128, 128, 1, 5]): 'conv_5.19.weight',
+                             torch.Size([128, 128, 5, 1]): 'conv_5.20.weight'}
+    if weight_shape in weightshape2layername.keys():
+        # print(f"weight_shape: {weight_shape} is in weightshape2layername.keys()")
+        layerweightname = weightshape2layername[weight_shape]
+        layerbiasname = layerweightname.replace('weight', 'bias')
+        return layerweightname, layerbiasname
+    else:
+        # print(f"weight_shape: {weight_shape} is not in weightshape2layername.keys()")
+        return False, False
+
+class AttentionPool_v1(nn.Module):
+    '''
+    @description: attention & pool on width or height
+    '''
+    def __init__(self, attention_dim, attention_len, out_w, out_h, reduction_dim):
+        '''
+        @param attention_dim: 2 or 3, 2 means attention & pool on width, 3 means attention & pool on height
+        '''
+        super().__init__()
+        assert attention_dim in [2,3]
+        self.attention_dim = attention_dim
+        self.out_w = out_w
+        self.out_h = out_h
+        self.attention_layer = nn.Sequential(
+            nn.AdaptiveMaxPool2d((1, 1)),
+            nn.Flatten(),
+            nn.Linear(attention_len, reduction_dim),
+            nn.BatchNorm1d(reduction_dim),
+            nn.ReLU(),
+            nn.Linear(reduction_dim, attention_len),
+            nn.Softmax(dim=1)
+        )
+
+    def forward(self, x):
+        assert len(x.size()) == 4, "fit for 4-dim [N, C, W, H] tensor"
+        if self.attention_dim == 2:
+            # assert self.out_h == x.size()[3]
+            attention_vector = torch.permute(x, (0, 2, 1, 3))
+            attention_vector = self.attention_layer(attention_vector)
+            _, max_indices = torch.topk(attention_vector, self.out_w, dim=1)
+            max_values_sorted, _ = torch.sort(max_indices, dim=1)
+            pooled_x = torch.stack([x[i, :, max_values_sorted[i], :] for i in range(x.size()[0])], dim=0)
+        else:
+            # assert self.out_w == x.size()[2]
+            attention_vector = torch.permute(x, (0, 3, 1, 2))
+            attention_vector = self.attention_layer(attention_vector)
+            _, max_indices = torch.topk(attention_vector, self.out_h, dim=1)
+            max_values_sorted, _ = torch.sort(max_indices, dim=1)
+            pooled_x = torch.stack([x[i, :,:, max_values_sorted[i]] for i in range(x.size()[0])], dim=0)
+        return pooled_x
+        
+
+if __name__ == "__main__":
+    SKBlock_v6(h_channels=64, out_channels=64, reduction=32)
 

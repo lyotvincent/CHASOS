@@ -3,7 +3,8 @@
 '''
 
 import sys, os, time
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))+'/pretrained_model')
 
 from parameters import PRETRAINED_MODEL_PATH
 from pretrained_data_loader import load_kmer_encoded_data, PretrainedDataset
@@ -18,9 +19,9 @@ from scheduler import EarlyStopping
 # * prepare log
 start_time = time.time()
 log_time = time.strftime("%Y_%m_%d_%H_%M_%S", time.localtime())
-log_out = open(PRETRAINED_MODEL_PATH+r'/logs/log_'+log_time+'.txt', 'w', buffering=8)
-train_writer = SummaryWriter(PRETRAINED_MODEL_PATH+f'/logs/tensorboard_log_{log_time}/train')
-val_writer = SummaryWriter(PRETRAINED_MODEL_PATH+f'/logs/tensorboard_log_{log_time}/val')
+log_out = open(PRETRAINED_MODEL_PATH+r'/pretrained_layer/logs/log_'+log_time+'.txt', 'w', buffering=8)
+train_writer = SummaryWriter(PRETRAINED_MODEL_PATH+f'/pretrained_layer/logs/tensorboard_log_{log_time}/train')
+val_writer = SummaryWriter(PRETRAINED_MODEL_PATH+f'/pretrained_layer/logs/tensorboard_log_{log_time}/val')
 
 # * hyper parameters
 SPLIT_MODE = 'chr'
@@ -31,7 +32,8 @@ INIT_BATCH_SIZE = 16 # 使用GM12878 做chr val的
 BATCH_SIZE = 16
 LOG_STEP = 100*(INIT_BATCH_SIZE//BATCH_SIZE)
 EPOCH = 80
-LEARNING_RATE = 0.0001
+LEARNING_RATE = 1E-4
+LEARNING_RATE = 1E-5
 PATIENCE = 100
 DELTA = 5E-5
 START_EPOCH = 5
@@ -77,7 +79,7 @@ else:
 log_info = f"""device: {device}"""
 print(log_info)
 log_out.write(log_info+"\n")
-model = PretrainedModel_v20230329()
+model = PretrainedLayers()
 model.to(device)
 
 # write model graph
@@ -164,6 +166,11 @@ for e in range(EPOCH):
                 if (val_anchor_acc > best_val_anchor_acc) or (val_anchor_acc == best_val_anchor_acc and val_ocr_acc > best_val_ocr_acc): # update best val anchor acc
                     best_val_anchor_acc = val_anchor_acc
                     best_val_anchor_acc_log_info = f"Epoch {e}\t"+log_info
+                    checkpoint = {
+                        'epoch':e,
+                        'net':model.state_dict()
+                    }
+                    torch.save(checkpoint,PRETRAINED_MODEL_PATH+r'/pretrained_layer/model/PretrainedLayers_best.pth')
                 if (val_ocr_acc > best_val_ocr_acc) or (val_ocr_acc == best_val_ocr_acc and val_anchor_acc > best_val_anchor_acc):
                     best_val_ocr_acc = val_ocr_acc
                     best_val_ocr_acc_log_info = f"Epoch {e}\t"+log_info

@@ -39,6 +39,16 @@ def compute_accuracy(pred_scores, labels):
 
     return anchor_acc, ocr_acc
 
+def compute_cosine_similarity_1(vec1, vec2):
+    """计算余弦相似度"""
+    sim = nn.CosineSimilarity(dim=1)(vec1,vec2)
+
+def compute_cosine_similarity_2(vec1, vec2):
+    """计算余弦相似度"""
+    anchor_sim = nn.CosineSimilarity(dim=-1)(vec1[:, 0],vec2[:, 0])
+    ocr_sim = nn.CosineSimilarity(dim=-1)(vec1[:, 1],vec2[:, 1])
+    return 0.5 * (anchor_sim + ocr_sim)
+
 def compute_auc(pos_score, neg_score):
     with torch.no_grad():
         scores = torch.cat([pos_score, neg_score]).numpy()
