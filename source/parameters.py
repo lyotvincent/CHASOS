@@ -23,6 +23,10 @@ GLOVE_PATH = ROOT_DIR+r'/source/pretrained_model/pytorch_glove/'
 PRETRAINED_DATA_PATH = ROOT_DIR+r'/data/pretrained_data/'
 CHIP_SEQ_PATH = ROOT_DIR+r'/data/ChIP-seq/'
 PRETRAINED_MODEL_PATH = ROOT_DIR+r'/source/pretrained_model/'
+FINE_TUNED_ANCHOR_MODEL_PATH = ROOT_DIR+r'/source/fine_tuned_anchor_model/'
+FINE_TUNED_OCR_MODEL_PATH = ROOT_DIR+r'/source/fine_tuned_ocr_model/'
+LOOP_MODEL_PATH = ROOT_DIR+r'/source/loop_model/'
+CONSERVATION_PATH = ROOT_DIR+r'/data/phastcons/'
 
 
 CHROMOSOME_LIST = ['chr1',  'chr2',  'chr3',

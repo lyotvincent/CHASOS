@@ -204,6 +204,40 @@ def load_kmer_encoded_data(cell_line_list, split_mode, val_chr_list=['chr6', 'ch
         kmer_train_data_list, kmer_train_label_list, kmer_val_data_list, kmer_val_label_list = np.array([]), np.array([]), np.array([]), np.array([])
     return kmer_train_data_list, kmer_train_label_list, kmer_val_data_list, kmer_val_label_list
 
+def load_kmer_encoded_data_div_cell_line(cell_line_list, val_cell_line_list=['chr6', 'chr9']):
+    pretrained_encoded_data_path = PRETRAINED_MODEL_PATH+f'/encoded_data/chr/stride_1/'
+    kmer_train_data_list, kmer_train_label_list, kmer_val_data_list, kmer_val_label_list = np.array([]), np.array([]), np.array([]), np.array([])
+    for cell_line in cell_line_list:
+        if cell_line in val_cell_line_list:
+            for chr in CHROMOSOME_LIST:
+                feature_data = np.load(pretrained_encoded_data_path+f'/{cell_line}_data_list_{chr}.npy')
+                labels = np.load(pretrained_encoded_data_path+f'/{cell_line}_labels_list_{chr}.npy')
+                print(f"loading & concating {cell_line} {chr}, data len={len(feature_data)}")
+                if len(feature_data) == 0: continue
+                if len(kmer_val_data_list) == 0:
+                    kmer_val_data_list = feature_data
+                else:
+                    kmer_val_data_list = np.concatenate((kmer_val_data_list, feature_data), axis=0)
+                if len(kmer_val_label_list) == 0:
+                    kmer_val_label_list = labels
+                else:
+                    kmer_val_label_list = np.concatenate((kmer_val_label_list, labels), axis=0)
+        else:
+            for chr in CHROMOSOME_LIST:
+                feature_data = np.load(pretrained_encoded_data_path+f'/{cell_line}_data_list_{chr}.npy')
+                labels = np.load(pretrained_encoded_data_path+f'/{cell_line}_labels_list_{chr}.npy')
+                print(f"loading & concating {cell_line} {chr}, data len={len(feature_data)}")
+                if len(feature_data) == 0: continue
+                if len(kmer_train_data_list) == 0:
+                    kmer_train_data_list = feature_data
+                else:
+                    kmer_train_data_list = np.concatenate((kmer_train_data_list, feature_data), axis=0)
+                if len(kmer_train_label_list) == 0:
+                    kmer_train_label_list = labels
+                else:
+                    kmer_train_label_list = np.concatenate((kmer_train_label_list, labels), axis=0)
+    return kmer_train_data_list, kmer_train_label_list, kmer_val_data_list, kmer_val_label_list
+
 
 if __name__=="__main__":
     ## 假设我们有一个数据集，包含了 100 个样本，每个样本是一个长度为 10 的序列，每个样本还带有一个标签。
@@ -248,9 +282,9 @@ if __name__=="__main__":
 
     # 用load_kmer_encoded_data()函数生成数据或加载数据
     kmer_train_data_list, kmer_train_label_list, kmer_val_data_list, kmer_val_label_list = load_kmer_encoded_data(cell_line_list=CELL_LINE_LIST, split_mode='chr', val_chr_list=['chr22', 'chrX'], stride=1)
-    print(len(kmer_train_data_list))
-    print(len(kmer_train_label_list))
-    print(len(kmer_val_data_list))
-    print(len(kmer_val_label_list))
+    # print(len(kmer_train_data_list))
+    # print(len(kmer_train_label_list))
+    # print(len(kmer_val_data_list))
+    # print(len(kmer_val_label_list))
 
 

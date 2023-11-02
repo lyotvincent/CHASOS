@@ -3,15 +3,17 @@
 @purpose: preprocess DNase file download from ENCODE with 'bed narrowPeak' format.
 """
 
-import sys, os
+import sys, os, random
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import glob, re
+import glob, re, sqlite3
 from parameters import *
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 import pandas as pd
 from utils import TimeStatistic
+from loop_preprocessor import load_UCSC_hg38
+from motif_strength_adder import get_HS, get_HS_all
 
 # @TimeStatistic
 def make_DNase_statistics_for_one(file_path, draw=False):
@@ -143,14 +145,229 @@ def filter_narrowPeak_by_length_and_signalValue(dnase_accessions, ocr_length_thr
             f_out.write(i)
         f_out.close()
 
+def create_table():
+    conn = sqlite3.connect(DNASE_DIR+'/dnase.db')
+    print ("数据库打开成功")
+    c = conn.cursor()
+    for cell_line in CELL_LINE_LIST:
+        for chr in CHROMOSOME_LIST:
+            c.execute(f'''DROP TABLE IF EXISTS {cell_line.replace('-', '_')}_{chr};''')
+            c.execute(f'''CREATE TABLE {cell_line.replace('-', '_')}_{chr}
+                (POSITION    INT  PRIMARY KEY  NOT NULL,
+                SIGNALVALUE    REAL    NOT NULL);''')
+    print ("数据表创建成功")
+    conn.commit()
+    conn.close()
+
+def insert(dnase_accessions):
+    conn = sqlite3.connect(DNASE_DIR+'/dnase.db')
+    c = conn.cursor()
+    print ("数据库打开成功")
+
+    for cell_line, accession in dnase_accessions:
+        f = open(DNASE_DIR+f"/{cell_line}/{accession}.bed", 'r')
+        lines = f.readlines()
+        f.close()
+        for l in lines:
+            fields = l.strip().split()
+            chr = fields[0]
+            signalValue = float(fields[6])
+            for pos in range(int(fields[1]), int(fields[2])):
+                # if chr == "chr10":
+                #     print(pos, signalValue)
+                # print(f"INSERT INTO {cell_line.replace('-', '_')}_{chr} (POSITION,SIGNALVALUE) \
+                #     VALUES ({pos}, {signalValue}) ON DUPLICATE KEY UPDATE SIGNALVALUE = {signalValue};")
+                c.execute(f"INSERT OR IGNORE INTO {cell_line.replace('-', '_')}_{chr} (POSITION,SIGNALVALUE) \
+                    VALUES ({pos}, {signalValue});")
+        conn.commit()
+        print (f"{cell_line}/{accession}.bed 数据插入成功")
+    conn.close()
+
+def search(cell_line, chr, start, end):
+    conn = sqlite3.connect(DNASE_DIR+'/dnase.db')
+    c = conn.cursor()
+    print ("数据库打开成功")
+
+    cursor = c.execute(f"SELECT sum(SIGNALVALUE) from {cell_line.replace('-', '_')}_{chr} where POSITION between {start} and {end};")
+    a = cursor.fetchall()
+    print(a[0][0])
+    print(type(a[0][0]))
+    conn.close()
+
+def add_seq_to_bed(dnase_accessions, chromosome_dict):
+    '''
+    # output file fields
+    # chrom chromStart chromEnd signalValue peak seq
+    '''
+    for cell_line, accession in dnase_accessions:
+        print("add_seq_to_bed", cell_line, accession)
+        f = open(DNASE_DIR+f"/{cell_line}/{accession}.bed", 'r')
+        lines = f.readlines()
+        f.close()
+        f_out = open(DNASE_DIR+f"/{cell_line}/{cell_line}_OCR.bed", 'w')
+        for i in lines:
+            fields = i.strip().split()
+            peak = int(fields[1])+int(fields[9])
+            seq = chromosome_dict[fields[0]][peak-500:peak+500]
+            f_out.write(f"{fields[0]}\t{fields[1]}\t{fields[2]}\t{fields[6]}\t{fields[9]}\t{seq}\n")
+        f_out.close()
+
+def gen_extension_ocr(cell_line_list):
+    '''
+    @purpose: generate extended open chromatin region with followed information:
+              chrom chromStart chromEnd signalValue peak seq
+              note that the signalValue is the average value of the extended region,
+    '''
+    dnase_conn = sqlite3.connect(DNASE_DIR+'/dnase.db')
+    extension = 500
+    for cell_line in cell_line_list:
+        print("gen_extension_ocr", cell_line)
+        f = open(DNASE_DIR+f"/{cell_line}/{cell_line}_OCR.bed", 'r')
+        lines = f.readlines()
+        f.close()
+        f_out = open(DNASE_DIR+f"/{cell_line}/{cell_line}_OCR_ext.bed", 'w')
+        ##  data from DNase bed file, the peak field is 75
+        for i in lines:
+            fields = i.strip().split()
+            peak = int(fields[1])+int(fields[4])
+            _HS = get_HS(dnase_conn, cell_line, fields[0], peak-extension, peak+extension) / (2*extension)
+            f_out.write(f"{fields[0]}\t{fields[1]}\t{fields[2]}\t{_HS}\t{fields[4]}\t{fields[5]}\n")
+        ## data from positive loop file, the peak field is 0
+        for i in range(1, 6):
+            f = open(POS_LOOP_PATH.format(cell_line, i), 'r')
+            lines = f.readlines()
+            f.close()
+            f = open(POS_LOOP_PATH.format(cell_line, i), 'r')
+            lines = f.readlines()
+            f.close()
+            for line in lines:
+                fields = line.strip().split()
+                # anchor 1
+                _HS = get_HS(dnase_conn, cell_line, fields[0], (int(float(fields[4]))-extension), (int(float(fields[4]))+extension)) / (2*extension)
+                f_out.write(f"{fields[0]}\t{int(float(fields[4]))-extension}\t{int(float(fields[4]))+extension}\t{_HS}\t0\t{fields[5]}\n")
+                # anchor 2
+                _HS = get_HS(dnase_conn, cell_line, fields[6], (int(float(fields[10]))-extension), (int(float(fields[10]))+extension)) / (2*extension)
+                f_out.write(f"{fields[6]}\t{int(float(fields[10]))-extension}\t{int(float(fields[10]))+extension}\t{_HS}\t0\t{fields[11]}\n")
+        ## data from negative loop file, the peak field is 0
+        for typee in range(0, 6):
+            for i in range(2):
+                f = open(NEG_LOOP_PATH.format(cell_line, typee, i), 'r')
+                lines = f.readlines()
+                f.close()
+                for line in lines:
+                    fields = line.strip().split()
+                    seq1 = fields[5]
+                    seq2 = fields[11]
+                    if "N" in seq1 or "N" in seq2:
+                        continue
+                    _HS = get_HS(dnase_conn, cell_line, fields[0], (int(float(fields[4]))-extension), (int(float(fields[4]))+extension)) / (2*extension)
+                    f_out.write(f"{fields[0]}\t{int(float(fields[4]))-extension}\t{int(float(fields[4]))+extension}\t{_HS}\t0\t{seq1}\n")
+                    _HS = get_HS(dnase_conn, cell_line, fields[6], (int(float(fields[10]))-extension), (int(float(fields[10]))+extension)) / (2*extension)
+                    f_out.write(f"{fields[6]}\t{int(float(fields[10]))-extension}\t{int(float(fields[10]))+extension}\t{_HS}\t0\t{seq2}\n")
+        f_out.close()
+    dnase_conn.close()
+
+def gen_extension2_ocr(cell_line_list):
+    '''
+    @purpose: generate extended open chromatin region with followed information:
+              chrom chromStart chromEnd signalValue_list peak seq
+              note that the signalValue is the average value of the extended region,
+              产生用于ocr训练的数据，
+    '''
+    # ! 注意由于产生neg loop过程中设计乱序等操作，所以某一些neg loop的位置是错误的。这些loop的anchor不能拿来当样本。
+    # ! 下面列举每个类型的数据情况:
+    '''
+    pos loop的五类都是可以的，因为都是从正常正例里抽取的。
+    neg loop共12类。
+    type_0: # ! 有问题，anchor1的序列是打乱的，所以位置对应不上，也就没有signalValue的数据
+    type_1: 没问题，这个环的两个锚点是pos motif anchor & neg motif anchor。
+    type_2: 没问题，后续各种类型见negative_loop_generator.py。总之就是1-5都没问题，都是序列和位置是对应的。
+    type_3: type_4: type_5: 
+    所以下面neg loop的循环直接从1开始。不要0了。
+    '''
+    dnase_conn = sqlite3.connect(DNASE_DIR+'/dnase.db')
+    extension = 500
+    for cell_line in cell_line_list:
+        print("gen_extension_ocr", cell_line)
+        f = open(DNASE_DIR+f"/{cell_line}/{cell_line}_OCR.bed", 'r')
+        lines = f.readlines()
+        f.close()
+        f_out = open(DNASE_DIR+f"/{cell_line}/{cell_line}_OCR_ext2.bed", 'w')
+        ##  data from DNase bed file, the peak field is 75
+        # for i in lines:
+        #     fields = i.strip().split()
+        #     peak = int(fields[1])+int(fields[4])
+        #     _HS = get_HS_all(dnase_conn, cell_line, fields[0], peak-extension, peak+extension)
+        #     _HS = ",".join([str(i) for i in _HS])
+        #     f_out.write(f"{fields[0]}\t{fields[1]}\t{fields[2]}\t{_HS}\t{fields[4]}\t{fields[5]}\n")
+        ## data from positive loop file, the peak field is 0
+        for i in range(1, 6):
+            f = open(POS_LOOP_PATH.format(cell_line, i), 'r')
+            lines = f.readlines()
+            f.close()
+            f = open(POS_LOOP_PATH.format(cell_line, i), 'r')
+            lines = f.readlines()
+            f.close()
+            for line in lines:
+                fields = line.strip().split()
+                # 这里的1000bp是根据中点取的，注意pos_loop文件中的start和end是motif的start和end，所以此处要从中点拓展。
+                # anchor 1
+                _HS = get_HS_all(dnase_conn, cell_line, fields[0], (int(float(fields[4]))-extension), (int(float(fields[4]))+extension))
+                _HS = ",".join([str(i) for i in _HS])
+                f_out.write(f"{fields[0]}\t{int(float(fields[4]))-extension}\t{int(float(fields[4]))+extension}\t{_HS}\t0\t{fields[5]}\n")
+                # anchor 2
+                _HS = get_HS_all(dnase_conn, cell_line, fields[6], (int(float(fields[10]))-extension), (int(float(fields[10]))+extension))
+                _HS = ",".join([str(i) for i in _HS])
+                f_out.write(f"{fields[6]}\t{int(float(fields[10]))-extension}\t{int(float(fields[10]))+extension}\t{_HS}\t0\t{fields[11]}\n")
+        ## data from negative loop file, the peak field is 0
+        for typee in range(1, 6):
+            for i in range(2):
+                f = open(NEG_LOOP_PATH.format(cell_line, typee, i), 'r')
+                lines = f.readlines()
+                f.close()
+                for line in lines:
+                    fields = line.strip().split()
+                    seq1 = fields[5]
+                    seq2 = fields[11]
+                    if "N" in seq1 or "N" in seq2:
+                        continue
+                    # anchor 1
+                    _HS = get_HS_all(dnase_conn, cell_line, fields[0], (int(float(fields[4]))-extension), (int(float(fields[4]))+extension))
+                    _HS = ",".join([str(i) for i in _HS])
+                    f_out.write(f"{fields[0]}\t{int(float(fields[4]))-extension}\t{int(float(fields[4]))+extension}\t{_HS}\t0\t{seq1}\n")
+                    # anchor 2
+                    _HS = get_HS_all(dnase_conn, cell_line, fields[6], (int(float(fields[10]))-extension), (int(float(fields[10]))+extension))
+                    _HS = ",".join([str(i) for i in _HS])
+                    f_out.write(f"{fields[6]}\t{int(float(fields[10]))-extension}\t{int(float(fields[10]))+extension}\t{_HS}\t0\t{seq2}\n")
+        f_out.close()
+    dnase_conn.close()
+
 
 if __name__=="__main__":
+    seed = 9523
+    random.seed(seed)  # Python的随机性
+    os.environ['PYTHONHASHSEED'] = str(seed)  # 设置Python哈希种子，为了禁止hash随机化，使得实验可复现
+    np.random.seed(seed)  # numpy的随机性
+
     # make_DNase_statistics_for_one(file_path=ROOT_DIR+r"/data/DNase/GM12878/ENCFF759OLD.bed", draw=True)
 
     dnase_accessions = glob.glob(DNASE_DIR+r"/*/*.bed")
-    dnase_accessions = [re.split(r"/|\.", repr(i).replace(r"\\", r'/'))[-3:-1] for i in dnase_accessions] # split by / and .
+    dnase_accessions = [re.split(r"/|\.", repr(i).replace(r"\\", r'/'))[-3:-1] for i in dnase_accessions if 'filtered' not in i and "_" not in i] # split by / and .
+    dnase_accessions = [i for i in dnase_accessions if i[0] in CELL_LINE_LIST] # i[0] is cell line, i[1] is accession
+    # print(len(dnase_accessions))
 
     # make_DNase_statistics_for_many(dnase_accessions)
 
-    filter_narrowPeak_by_length_and_signalValue(dnase_accessions)
+    # filter_narrowPeak_by_length_and_signalValue(dnase_accessions)
 
+    # create_table()
+    # insert(dnase_accessions)
+    # search(cell_line="GM12878", chr="chr10", start=1000000, end=10000000)
+
+    # hg38_chromosome_dict = load_UCSC_hg38()
+    # add_seq_to_bed(dnase_accessions, hg38_chromosome_dict)
+
+    # gen_extension_ocr(cell_line_list=["GM12878"])
+    # gen_extension2_ocr(cell_line_list=["GM12878"])
+    # gen_extension2_ocr(cell_line_list=["GM12878", "HCT116", "IMR-90", "K562"])
+    gen_extension2_ocr(cell_line_list=["AG04450", "BJ", "Caco-2", "GM12878", "HCT116", "IMR-90", "K562", "MCF-7"])

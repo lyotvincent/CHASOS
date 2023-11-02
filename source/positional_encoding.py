@@ -5,7 +5,7 @@
 import torch
 
 class PositionalEncoding(torch.nn.Module):
-    def __init__(self, embedding_dim, dropout=0.1, max_seq_len=5000):
+    def __init__(self, embedding_dim, dropout=0., max_seq_len=5000):
         '''
         @param max_seq_len: the max tokens number in a sequence
         @param d_model: the embedding dimension of a token
@@ -25,7 +25,11 @@ class PositionalEncoding(torch.nn.Module):
         # print(self.pe.size())
         # print(x.size())
         # print(self.pe[:, :x.size(1), :x.size(2)].size())
-        x = x + self.pe[:, :x.size(1), :x.size(2)]
+        try:
+            x = x + self.pe[:, :x.size(1), :x.size(2)] # type: ignore
+        except Exception as e:
+            print(e)
+            print(x)
         return self.dropout(x)
 
 # class MyModel(nn.Module):

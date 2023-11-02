@@ -9,14 +9,30 @@ from sklearn.metrics import roc_auc_score
 
 
 def compute_one_loss(pred_scores, labels):
+    if len(pred_scores.shape) == 2:
+        pred_scores = pred_scores.squeeze(1)
     loss_a = nn.BCELoss()(pred_scores, labels)
     return loss_a
 
-def compute_two_loss(pred_scores, labels):
+def compute_two_loss(pred_scores, labels, ratio=0.5):
     loss_a = nn.BCELoss()(pred_scores[:, 0], labels[:, 0])
     loss_b = nn.BCELoss()(pred_scores[:, 1], labels[:, 1])
-    loss = 0.5 * (loss_a + loss_b)
+    loss = ratio * loss_a + (1 - ratio) * loss_b
     return loss
+
+def compute_one_acc(pred1, label1):
+    if len(pred1.shape) == 2:
+        pred1 = pred1.squeeze(1)
+    # 将预测分数四舍五入为0或1，表示预测标签
+    pred1 = torch.round(pred1)
+    # print(pred1)
+    # print(label1)
+    # 计算预测标签与真实标签相同的数量
+    correct = (pred1 == label1).sum().item()
+    # print(correct, len(label1))
+    # 计算精度值
+    accuracy = correct / len(label1)
+    return accuracy
 
 def compute_accuracy(pred_scores, labels):
     """计算精度
@@ -26,14 +42,6 @@ def compute_accuracy(pred_scores, labels):
     Returns:
         float: 精度值(0到1之间的浮点数)
     """
-    def compute_one_acc(pred1, label1):
-        # 将预测分数四舍五入为0或1，表示预测标签
-        pred1 = torch.round(pred1)
-        # 计算预测标签与真实标签相同的数量
-        correct = (pred1 == label1).sum().item()
-        # 计算精度值
-        accuracy = correct / len(label1)
-        return accuracy
     anchor_acc = compute_one_acc(pred_scores[:, 0], labels[:, 0])
     ocr_acc = compute_one_acc(pred_scores[:, 1], labels[:, 1])
 

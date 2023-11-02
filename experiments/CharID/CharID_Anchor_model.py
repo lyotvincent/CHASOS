@@ -6,6 +6,7 @@
 import sys, os, time
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+import random
 import numpy as np
 import torch
 import torch.nn as nn
@@ -15,6 +16,18 @@ from source.parameters import PRETRAINED_DATA_PATH, CELL_LINE_LIST, CHROMOSOME_L
 from torch.utils.data import Dataset
 from torch.utils.tensorboard.writer import SummaryWriter
 from collections import defaultdict
+
+def seed_torch(seed=9523):
+    random.seed(seed)  # Python的随机性
+    os.environ['PYTHONHASHSEED'] = str(seed)  # 设置Python哈希种子，为了禁止hash随机化，使得实验可复现
+    np.random.seed(seed)  # numpy的随机性
+    torch.manual_seed(seed)   # torch的CPU随机性，为CPU设置随机种子
+    torch.cuda.manual_seed(seed)  # torch的GPU随机性，为当前GPU设置随机种子
+    torch.cuda.manual_seed_all(seed)  # if you are using multi-GPU. torch的GPU随机性，为所有GPU设置随机种子
+    torch.backends.cudnn.benchmark = False  # if benchmark=True, deterministic will be False # type: ignore 
+    torch.backends.cudnn.deterministic = True  # 选择确定性算法 # type: ignore
+
+seed_torch()
 
 epochs = 150
 # patience = 20
@@ -129,6 +142,10 @@ class PretrainedDataset(Dataset):
             return self.monomer_data[index], self.labels[index]
 
 class CharID_Anchor(nn.Module):
+    '''
+    @thop.profile: macs=64275400.0, params=492945.0
+    @model parameter number: 595985
+    '''
     def __init__(self):
         super().__init__()
 
@@ -192,7 +209,6 @@ def compute_one_acc(pred1, label1):
     accuracy = correct / len(label1)
     return accuracy
 
-
 '''
 # see FLOPs and parameters
 model = CharID_Anchor()
@@ -200,10 +216,13 @@ model = CharID_Anchor()
 from thop import profile
 input = torch.randn(1, 1000, 4)
 macs, params = profile(model, inputs=(input, ))
-print(macs, params) # 64086600.0 518865.0
+print(macs, params)
 
 # from torchstat import stat
-# stat(model, (1, 1000, 4))
+# stat(model, (1000, 4))
+
+print(f"model parameter number: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
+exit()
 '''
 
 # * prepare log

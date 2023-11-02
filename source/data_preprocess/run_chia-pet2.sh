@@ -68,4 +68,36 @@ nohup ChIA-PET2 -g ./hg38/hg38.fa -b ./hg38/hg38.chrom.sizes -f ./raw_data/PC-9/
 nohup ChIA-PET2 -g ./hg38/hg38.fa -b ./hg38/hg38.chrom.sizes -f ./raw_data/HepG2/read1_ENCFF285PTY.fastq.gz -r ./raw_data/HepG2/read2_ENCFF042GDX.fastq.gz -A ACGCGATATCTTATCTGACT -B AGTCAGATAAGATATCGCGT -o HepG2_ChIA-PET2_result -n HepG2 -m 1 -t 8 > nohup.out 2>&1 &
 
 
+## -help
+# $ ChIA-PET2 -h
+# usage : ChIA-PET2 -g genomeindex -b bedtoolsgenome -f fq1 -r fq2 -A linkerA -B linkerB -o OUTdir -n prefixname
+# Use option -h|--help for more information
 
+# ChIA-PET2 0.9.3   2017.11.07
+# ----------------------------
+# OPTIONS
+
+#   -s|--start:     start from which step(1:8): 1:Trim Linkers; 2:Map Reads; 3:Build PETs; 4:Call Peaks; 5:Find Interactions
+#                   6:Plot QC; 7:Estimate statistical confidence; 8:Phase PETs(optional), default=1
+#   -g|--genome:    genome index for bwa
+#   -b|--bedtoolsgenome: chromsomes size file for bedtools
+#   -f|--forward:   one fastq(.gz) file
+#   -r|--reverse:   the other fastq(.gz) file
+#   -A|--linkerA:   one linker sequence, default=GTTGGATAAG
+#   -B|--linkerB:   the other linker sequence, default=GTTGGAATGT
+#   -o|--output:    output folder, default=output
+#   -n|--name:      output prefix name, default=out
+#   -m|--mode:      0,1,2;  0: A/B linkers; 1: bridge liker; 2: Enzyme site, default=0
+#   -e|--err:       Maximum mismatches allowed in linker sequence, default=0
+#   -k|--keepempty: 0,1,2; 0:No linker-empty reads; 1:keep 1 linker-empty read; 2:keep 2 linker-empty reads. default=0
+#   -t|--thread:    threads to run, default=1
+#   -d|--short:     short reads (0 or 1), default=0 for reads >70bp. If the read length is about 20bp, set d=1
+#   -M|--macs2 parameters, default="-q 0.05"
+#   -Q|--mapq:      mapq cutoff, default=30
+#   -C|--cutoffPET: PET count cutoff before running MICC, default=2
+#   -S|--slop:      slop length, default=100
+#   -E|--extend:    extend length on both sides, default=500
+#   -l|--length:    min length of reads after linker trimming. default=15
+#   -P|--phased:    optional phased genotype file: 'chr1\tstart\tend\tA\tC'
+#   [-h|--help]:    help
+#   [-v|--version]: version
