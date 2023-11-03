@@ -55,7 +55,9 @@
 /source/fine_tuned_anchor_model/logs
 /source/fine_tuned_anchor_model/model
 /source/fine_tuned_ocr_model/logs
-/source/fine_tuned_ocr_model/model
+/source/fine_tuned_ocr_model/model/*
+!/source/fine_tuned_ocr_model/model/OCRModel_val_loss_2023_06_30_23_34_50.pt
+!/source/fine_tuned_ocr_model/model/OCRModel_val_loss_2023_07_07_19_04_18.pt
 /source/gnn_model
 /source/loop_model/dl_training_data
 /source/loop_model/logs
@@ -66,7 +68,9 @@
 /source/pretrained_model/encoded_data
 /source/pretrained_model/logs
 /source/pretrained_model/logs_backup
-/source/pretrained_model/model
+/source/pretrained_model/model/*
+!/source/pretrained_model/model/PretrainedModel_2023_06_29_20_59_01.pt
+!/source/pretrained_model/model/PretrainedModel_2023_07_06_20_42_59_AnchorModel_v20230516_v1.pt
 /source/pretrained_model/pytorch_glove/figures
 /source/pretrained_model/pytorch_glove/data
 /source/pretrained_model/pytorch_glove/model
