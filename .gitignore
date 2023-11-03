@@ -63,7 +63,9 @@
 /source/loop_model/logs
 /source/loop_model/logs_backup
 /source/loop_model/ml_training_data
-/source/loop_model/model
+/source/loop_model/model/*
+!/source/loop_model/model/RandomForestClassifier_mine_allfeats_8cellline_byhealth.joblib
+!/source/loop_model/model/RandomForestClassifier_mine_allfeats_8cellline_bychr.joblib
 /source/pretrained_model/test.py
 /source/pretrained_model/encoded_data
 /source/pretrained_model/logs

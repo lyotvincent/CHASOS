@@ -38,3 +38,15 @@ A novel method called CHASOS (CHromatin loop prediction with Anchor Score and OC
 The anchor score model is trained efficiently on a NVIDIA GeForce RTX 3060 12G GPU
 The models are implemented in a Python 3.8 environment, utilizing PyTorch 1.12 as the backend framework.
 
+# Persistent model directory
+model trained in experiment "Comparative evaluation on different chromosomes"
+> OCR model: /source/fine_tuned_ocr_model/model/OCRModel_val_loss_2023_06_30_23_34_50.pt  
+Anchor model: /source/pretrained_model/model/PretrainedModel_2023_06_29_20_59_01.pt  
+Loop model: /source/loop_model/model/RandomForestClassifier_mine_allfeats_8cellline_bychr.joblib (It's just named a random forest, but it's actually a gradient boosting tree)
+
+model trained in experiment "Comparative evaluation in cancer cell lines"
+> OCR model: /source/fine_tuned_ocr_model/model/OCRModel_val_loss_2023_07_07_19_04_18.pt  
+Anchor model: /source/pretrained_model/model/PretrainedModel_2023_07_06_20_42_59_AnchorModel_v20230516_v1.pt  
+Loop model: /source/loop_model/model/RandomForestClassifier_mine_allfeats_8cellline_byhealth.joblib (It's just named a random forest, but it's actually a gradient boosting tree)
+
+
