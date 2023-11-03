@@ -39,7 +39,7 @@ A novel method called CHASOS (CHromatin loop prediction with Anchor Score and OC
 * drawing K562 loop prediction example code (Figure 5 in paper): /source/loop_model/raw_predictor.py
 
 # Training environment
-The anchor score model is trained efficiently on a NVIDIA GeForce RTX 3060 12G GPU
+The anchor score model is trained efficiently on a NVIDIA GeForce RTX 3060 12G GPU.  
 The models are implemented in a Python 3.8 environment, utilizing PyTorch 1.12 as the backend framework.
 
 # Persistent model directory
