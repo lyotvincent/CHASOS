@@ -6,6 +6,7 @@ A novel method called CHASOS (CHromatin loop prediction with Anchor Score and OC
 * /experiments - the source code of comparison methods
 * /source/pretrained_model - source code of anchor score model
 * /source/fine_tuned_ocr_model - source code of OCR score model
+* /source/loop_model - source code of loop prediction model
 * /data/ChIA-PET/CTCF/raw_data - raw data of detect chromatin loops used for training and testing
 * /data/ChIA-PET2_result - the result of chromatin loop detection by ChIA-PET2
 * /data/ChIP-seq - ChIP-seq data of CTCF used in chromatin loops filtering
