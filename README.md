@@ -27,19 +27,25 @@ A novel method called CHASOS (CHromatin loop prediction with Anchor Score and OC
 * designed module in model: /source/pretrained_model/custom_layer.py
 * training data preparation code: /source/pretrained_model/pretrained_data_loader.py
 
+The anchor score model generates a single value between 0 and 1 as its output, which indicates the probability of the input se-quence serving as an anchor for a loop. This output could be di-rectly employed as a feature for predicting chromatin loops.
+
 # OCR score model
 * main training code: /source/fine_tuned_ocr_model/ocr_trainer.py
 * model code: /source/fine_tuned_ocr_model/ocr_models.py - OCRModel_v20230524_v1
 * designed module in model: /source/pretrained_model/custom_layer.py
 * training data preparation code: /source/fine_tuned_ocr_model/ocr_data_loader.py
 
+The OCR score model produces a [1000,1] tensor representing 1000 positions of the input sequence. This tensor signifies the predicted signal values of DNase hypersensitive site at these 1000 positions. The average of these values is computed and employed as a feature for chromatin loop prediction.
+
 # Loop prediction model
 * main training code: /source/loop_model/loop_ml_model_trainer.py
 * training data preparation code: /source/loop_model/preprocess_data.py
 * drawing K562 loop prediction example code (Figure 5 in paper): /source/loop_model/raw_predictor.py
 
+In the loop prediction model section, the gradient boosting tree algo-rithm is employed. It combines the two simulated features ob-tained from the anchor score and OCR score models with the se-quence and functional genomics features commonly used for pre-diction. The gradient boosting tree outputs a single value as the prediction, which assesses the probability of constituting a chro-matin loop.
+
 # Training environment
-The anchor score model is trained efficiently on a NVIDIA GeForce RTX 3060 12G GPU.  
+The anchor score model and OCR score model are trained efficiently on a NVIDIA GeForce RTX 3060 12G GPU.  
 The models are implemented in a Python 3.8 environment, utilizing PyTorch 1.12 as the backend framework.
 
 # Persistent model directory
