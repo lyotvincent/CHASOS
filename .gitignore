@@ -50,7 +50,9 @@
 /experiments/DeepLUCIA/model
 /experiments/glove_embedding_experiments
 /experiments/Lollipop/training_data
-/figure
+/figure/*
+!/figure/test3fig.py
+!/figure/test12fig.py
 /references
 /source/fine_tuned_anchor_model/logs
 /source/fine_tuned_anchor_model/model
