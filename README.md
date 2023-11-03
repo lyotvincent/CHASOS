@@ -4,7 +4,7 @@ A novel method called CHASOS (CHromatin loop prediction with Anchor Score and OC
 
 # Menu
 * /experiments - the source code of comparison methods
-* /figure - the source code of figures in paper
+* /figure - the source code of figures (Fig.2-4) in paper
 * /source - the source code of CHASOS
   - /pretrained_model - source code of anchor score model
   - /fine_tuned_ocr_model - source code of OCR score model
@@ -27,7 +27,7 @@ A novel method called CHASOS (CHromatin loop prediction with Anchor Score and OC
 * designed module in model: /source/pretrained_model/custom_layer.py
 * training data preparation code: /source/pretrained_model/pretrained_data_loader.py
 
-The anchor score model generates a single value between 0 and 1 as its output, which indicates the probability of the input se-quence serving as an anchor for a loop. This output could be di-rectly employed as a feature for predicting chromatin loops.
+The anchor score model generates a single value between 0 and 1 as its output, which indicates the probability of the input sequence serving as an anchor for a loop. This output could be directly employed as a feature for predicting chromatin loops.
 
 # OCR score model
 * main training code: /source/fine_tuned_ocr_model/ocr_trainer.py
