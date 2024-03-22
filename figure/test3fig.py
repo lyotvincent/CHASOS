@@ -4,7 +4,8 @@ import matplotlib.ticker as ticker
 import numpy as np
 
 FONTSIZE = 8
-plt.figure(dpi=600, figsize=(6, 9))
+# plt.figure(dpi=600, figsize=(6, 9))
+plt.figure(dpi=800, figsize=(12, 4))
 # plt.figure(dpi=600, figsize=(4, 4))
 # plt.style.use("fast")
 plt.rc("font", family="Times New Roman")
@@ -33,7 +34,8 @@ seqfeat_anchorfeat_ocrfeat_funcfeat = [0.9299, 0.9819, 0.9744]
 y = [seqfeat, seqfeat_ocrfeat, seqfeat_anchorfeat, seqfeat_ocrfeat_anchorfeat,\
      seqfeat_funcfeat, seqfeat_ocrfeat_funcfeat, seqfeat_anchorfeat_funcfeat, seqfeat_anchorfeat_ocrfeat_funcfeat]
 
-plt.subplot(2, 1, 1)
+# plt.subplot(2, 1, 1)
+plt.subplot(1, 2, 1)
 total_width, n = 0.8, 8
 width = total_width / n
 x = np.arange(3)
@@ -71,7 +73,8 @@ seqfeat_anchorfeat_ocrfeat_funcfeat = [0.9467, 0.9871, 0.9864]
 y = [seqfeat, seqfeat_ocrfeat, seqfeat_anchorfeat, seqfeat_ocrfeat_anchorfeat,\
      seqfeat_funcfeat, seqfeat_ocrfeat_funcfeat, seqfeat_anchorfeat_funcfeat, seqfeat_anchorfeat_ocrfeat_funcfeat]
 
-plt.subplot(2, 1, 2)
+# plt.subplot(2, 1, 2)
+plt.subplot(1, 2, 2)
 for i in range(len(methods_name)):
     plt.bar(x+i*width, y[i], width=width, color=c[i], label=methods_name[i])
 plt.xlim([-0.5, 2.5])
@@ -87,4 +90,5 @@ plt.legend(loc="best")
 
 plt.savefig(fname="fig3.tif", format="tif", bbox_inches="tight")
 plt.savefig(fname="fig3.png", format="png", bbox_inches="tight")
+plt.savefig(fname="fig3.svg", format="svg", bbox_inches="tight")
 

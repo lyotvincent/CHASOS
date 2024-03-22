@@ -6,6 +6,7 @@ A novel method called CHASOS (CHromatin loop prediction with Anchor Score and OC
 * /experiments - the source code of comparison methods
 * /figure - the source code of figures (Fig.2-4) in paper
 * /source - the source code of CHASOS
+  - /data_preprocess - source code of data preprocess
   - /pretrained_model - source code of anchor score model
   - /fine_tuned_ocr_model - source code of OCR score model
   - /loop_model - source code of loop prediction model
@@ -20,6 +21,11 @@ A novel method called CHASOS (CHromatin loop prediction with Anchor Score and OC
   * /positive_loop - the positive chromatin loops used in training and testing
   * /pretrained_data - the data used in training anchor score model
 * /ref_block - some DL block tested in search space of model construction
+
+# Data preprocess
+Anchor score model dataset: `/source/data_preprocess/pretrained_data_loader.py`
+OCR score model dataset: `/source/data_preprocess/dnase_preprocessor.py`
+Loop prediction model dataset: `/source/data_preprocess/loop_preprocessor.py`, `/source/data_preprocess/positive_loop_generator.py`, `/source/data_preprocess/negative_loop_generator.py`, `/source/data_preprocess/motif_strength_adder.py`
 
 # Anchor score model
 * main training code: /source/pretrained_model/trainer.py

@@ -4,7 +4,7 @@ import matplotlib.ticker as ticker
 
 FONTSIZE = 8
 # plt.figure(dpi=600, figsize=(8, 4))
-plt.figure(dpi=600, figsize=(4, 4))
+plt.figure(dpi=800, figsize=(4, 4))
 # plt.style.use("fast")
 plt.rc("font", family="Times New Roman")
 params = {"axes.titlesize": FONTSIZE,
@@ -37,12 +37,13 @@ plt.ylabel('Area Under the Precision-Recall Curve (AUPRC)')
 plt.legend(loc="best")
 
 # plt.savefig(fname="fig1&2.svg", format="svg", bbox_inches="tight")
+plt.savefig(fname="fig1.svg", format="svg", bbox_inches="tight")
 plt.savefig(fname="fig1.tif", format="tif", bbox_inches="tight")
 plt.savefig(fname="fig1.png", format="png", bbox_inches="tight")
 # plt.savefig(fname="fig1&2.eps", format="eps", bbox_inches="tight")
 
 
-plt.figure(dpi=600, figsize=(4, 4))
+plt.figure(dpi=800, figsize=(4, 4))
 methods_name = ["CHASOS_all", "CHASOS_non_functional", "CTCF-MP", "DeepCTCFLoop", "DeepLUCIA", "CharID", "Lollipop"]
 auroc = [0.9871, 0.9799, 0.9824, 0.9540, 0.9515, 0.9826, 0.9763]
 auprc = [0.9864, 0.9790, 0.9802, 0.9577, 0.9525, 0.9813, 0.9707]
@@ -60,6 +61,7 @@ plt.ylabel('Area Under the Precision-Recall Curve (AUPRC)')
 # plt.title("(b) Experiment 2: comparisons with a training/validation\nset partitioned based on healthy/cancerous cell line")
 plt.legend(loc="best")
 
+plt.savefig(fname="fig2.svg", format="svg", bbox_inches="tight")
 plt.savefig(fname="fig2.tif", format="tif", bbox_inches="tight")
 plt.savefig(fname="fig2.png", format="png", bbox_inches="tight")
 
