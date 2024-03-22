@@ -23,8 +23,8 @@ A novel method called CHASOS (CHromatin loop prediction with Anchor Score and OC
 * /ref_block - some DL block tested in search space of model construction
 
 # Data preprocess
-Anchor score model dataset: `/source/data_preprocess/pretrained_data_loader.py`
-OCR score model dataset: `/source/data_preprocess/dnase_preprocessor.py`
+Anchor score model dataset: `/source/data_preprocess/pretrained_data_loader.py`  
+OCR score model dataset: `/source/data_preprocess/dnase_preprocessor.py`  
 Loop prediction model dataset: `/source/data_preprocess/loop_preprocessor.py`, `/source/data_preprocess/positive_loop_generator.py`, `/source/data_preprocess/negative_loop_generator.py`, `/source/data_preprocess/motif_strength_adder.py`
 
 # Anchor score model
